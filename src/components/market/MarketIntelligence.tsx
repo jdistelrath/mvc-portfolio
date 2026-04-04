@@ -14,7 +14,9 @@ const ALL_REGIONS: { value: Region; label: string }[] = [
   { value: 'arizona', label: 'Arizona' },
   { value: 'california', label: 'California' },
   { value: 'nevada', label: 'Nevada' },
+  { value: 'colorado', label: 'Colorado' },
   { value: 'southeast', label: 'Southeast' },
+  { value: 'northeast', label: 'Northeast' },
   { value: 'international', label: 'International' },
 ]
 
@@ -433,7 +435,7 @@ export default function MarketIntelligence() {
                       <span className={`chip ${
                         r.region === 'hawaii' ? 'chip-green' :
                         r.region === 'international' ? 'chip-blue' :
-                        r.region === 'california' || r.region === 'nevada' ? 'chip-amber' :
+                        r.region === 'california' || r.region === 'nevada' || r.region === 'colorado' ? 'chip-amber' :
                         'chip-gray'
                       }`} style={{ textTransform: 'capitalize', fontSize: '10px' }}>
                         {r.region}
