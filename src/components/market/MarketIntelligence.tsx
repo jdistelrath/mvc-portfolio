@@ -1,22 +1,31 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { contracts } from '../../data/portfolio'
-import { resorts, getYieldPerPoint, getRankedByYield, type MVCResort } from '../../data/resortDatabase'
+import { resorts, getYieldPerPoint, type MVCResort } from '../../data/resortDatabase'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const fmt = (n: number) => '$' + Math.round(n).toLocaleString()
 
 type Region = MVCResort['region']
-const REGION_FILTERS: { label: string; value: Region | 'all' }[] = [
-  { label: 'All', value: 'all' },
-  { label: 'Hawaii', value: 'hawaii' },
-  { label: 'Florida', value: 'florida' },
-  { label: 'Arizona', value: 'arizona' },
-  { label: 'California/Nevada', value: 'california' },
-  { label: 'Southeast', value: 'southeast' },
-  { label: 'International', value: 'international' },
+
+// Derive unique regions and states from the database
+const ALL_REGIONS: { value: Region; label: string }[] = [
+  { value: 'hawaii', label: 'Hawaii' },
+  { value: 'florida', label: 'Florida' },
+  { value: 'arizona', label: 'Arizona' },
+  { value: 'california', label: 'California' },
+  { value: 'nevada', label: 'Nevada' },
+  { value: 'southeast', label: 'Southeast' },
+  { value: 'international', label: 'International' },
 ]
 
-// Dave's owned contract names — used to show Fetch Comps button
+function extractState(location: string): string {
+  const parts = location.split(',').map(s => s.trim())
+  return parts[parts.length - 1] // "HI", "FL", "AZ", "CA", "NV", "SC", "Aruba"
+}
+
+const ALL_STATES = [...new Set(resorts.map(r => extractState(r.location)))].sort()
+
+// Dave's owned contract names
 const OWNED_NAMES = new Set(contracts.map(c => c.name))
 
 function sellProbability(pricePct: number): number {
@@ -45,22 +54,27 @@ function findOptimalPricePct(rackRate: number): number {
   return bestPct
 }
 
-// Build search URLs for comps modal
 function getCompUrls(resortName: string) {
   const q = encodeURIComponent(resortName + ' Marriott')
-  const month = MONTHS[new Date().getMonth()]
   return [
     { platform: 'RedWeek', url: `https://www.redweek.com/search?search=${encodeURIComponent(resortName)}` },
-    { platform: 'VRBO', url: `https://www.vrbo.com/search?destination=${q}&startDate=${month}` },
+    { platform: 'VRBO', url: `https://www.vrbo.com/search?destination=${q}&startDate=${MONTHS[new Date().getMonth()]}` },
     { platform: 'Airbnb', url: `https://www.airbnb.com/s/${q}/homes` },
   ]
+}
+
+function toggleSet<T>(set: Set<T>, item: T): Set<T> {
+  const next = new Set(set)
+  next.has(item) ? next.delete(item) : next.add(item)
+  return next
 }
 
 type SortKey = 'name' | 'location' | 'low' | 'avg' | 'peak' | 'pts' | 'yield' | 'source'
 type SortDir = 'asc' | 'desc'
 
 export default function MarketIntelligence() {
-  const [regionFilter, setRegionFilter] = useState<Region | 'all'>('all')
+  const [selectedRegions, setSelectedRegions] = useState<Set<Region>>(new Set())
+  const [selectedStates, setSelectedStates] = useState<Set<string>>(new Set())
   const [yieldSeason, setYieldSeason] = useState<'low' | 'avg' | 'peak'>('peak')
   const [rack, setRack] = useState(8500)
   const [listPrice, setListPrice] = useState(6000)
@@ -77,29 +91,29 @@ export default function MarketIntelligence() {
   const optimalPct = findOptimalPricePct(rack)
   const optimalEv = rack * optimalPct * sellProbability(optimalPct)
 
-  // When a resort is selected for the curve, update rack
-  useEffect(() => {
-    if (curveResort) {
-      const r = resorts.find(r => r.id === curveResort)
-      if (r) {
-        setRack(r.marketRates.peak)
-        setListPrice(Math.round(r.marketRates.peak * 0.68))
-      }
-    }
-  }, [curveResort])
+  const hasFilters = selectedRegions.size > 0 || selectedStates.size > 0
 
-  useEffect(() => { drawCurve() }, [rack, listPrice])
+  // Global filtered resorts — used by heatmap, yield table, and market table
+  const filteredResorts = useMemo(() => {
+    if (!hasFilters) return []
+    return resorts.filter(r => {
+      const regionMatch = selectedRegions.size === 0 || selectedRegions.has(r.region)
+      const stateMatch = selectedStates.size === 0 || selectedStates.has(extractState(r.location))
+      return regionMatch && stateMatch
+    })
+  }, [selectedRegions, selectedStates, hasFilters])
 
-  // Filtered resorts for heatmap
-  const heatmapResorts = useMemo(() => {
-    if (regionFilter === 'all') return resorts
-    if (regionFilter === 'california') return resorts.filter(r => r.region === 'california' || r.region === 'nevada')
-    return resorts.filter(r => r.region === regionFilter)
-  }, [regionFilter])
+  // States available given current region selection (for smart filtering)
+  const availableStates = useMemo(() => {
+    const pool = selectedRegions.size > 0
+      ? resorts.filter(r => selectedRegions.has(r.region))
+      : resorts
+    return [...new Set(pool.map(r => extractState(r.location)))].sort()
+  }, [selectedRegions])
 
   // Sorted + filtered market table
   const marketTableData = useMemo(() => {
-    let data = [...resorts]
+    let data = [...filteredResorts]
     if (tableSearch) {
       const q = tableSearch.toLowerCase()
       data = data.filter(r =>
@@ -127,15 +141,30 @@ export default function MarketIntelligence() {
       return sortDir === 'desc' ? -cmp : cmp
     })
     return data
-  }, [tableSearch, sortKey, sortDir])
+  }, [filteredResorts, tableSearch, sortKey, sortDir])
+
+  // Yield-ranked filtered resorts
+  const yieldRanked = useMemo(() => {
+    return [...filteredResorts].sort((a, b) =>
+      getYieldPerPoint(b, yieldSeason) - getYieldPerPoint(a, yieldSeason)
+    )
+  }, [filteredResorts, yieldSeason])
+
+  useEffect(() => {
+    if (curveResort) {
+      const r = resorts.find(r => r.id === curveResort)
+      if (r) {
+        setRack(r.marketRates.peak)
+        setListPrice(Math.round(r.marketRates.peak * 0.68))
+      }
+    }
+  }, [curveResort])
+
+  useEffect(() => { drawCurve() }, [rack, listPrice])
 
   const handleSort = (key: SortKey) => {
-    if (sortKey === key) {
-      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
-    } else {
-      setSortKey(key)
-      setSortDir('desc')
-    }
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortKey(key); setSortDir('desc') }
   }
 
   const sortIcon = (key: SortKey) =>
@@ -155,7 +184,6 @@ export default function MarketIntelligence() {
 
     ctx.clearRect(0, 0, W, H)
 
-    // Grid
     ctx.strokeStyle = '#e5e7eb'
     ctx.lineWidth = 0.5
     for (let i = 0; i <= 5; i++) {
@@ -163,20 +191,17 @@ export default function MarketIntelligence() {
       ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left + chartW, y); ctx.stroke()
     }
 
-    // EV bars
     for (let i = 0; i < steps; i++) {
       const x = (i + 1) / steps
       const evVal = rack * x * sellProbability(x)
       const barH = (evVal / rack) * chartH
       const barX = pad.left + (i / steps) * chartW
       const barW = chartW / steps
-
       const isSelected = Math.abs(x - pricePct) < 0.01
       ctx.fillStyle = isSelected ? '#16a34a' : 'rgba(34,197,94,0.25)'
       ctx.fillRect(barX, pad.top + chartH - barH, barW - 1, barH)
     }
 
-    // Sell probability line
     ctx.strokeStyle = '#378ADD'
     ctx.lineWidth = 2
     ctx.beginPath()
@@ -189,7 +214,6 @@ export default function MarketIntelligence() {
     }
     ctx.stroke()
 
-    // Current price marker
     const markerX = pad.left + pricePct * chartW
     ctx.strokeStyle = '#16a34a'
     ctx.lineWidth = 1.5
@@ -197,7 +221,6 @@ export default function MarketIntelligence() {
     ctx.beginPath(); ctx.moveTo(markerX, pad.top); ctx.lineTo(markerX, pad.top + chartH); ctx.stroke()
     ctx.setLineDash([])
 
-    // Optimal price marker
     const optX = pad.left + optimalPct * chartW
     ctx.strokeStyle = '#7c3aed'
     ctx.lineWidth = 1.5
@@ -205,14 +228,12 @@ export default function MarketIntelligence() {
     ctx.beginPath(); ctx.moveTo(optX, pad.top); ctx.lineTo(optX, pad.top + chartH); ctx.stroke()
     ctx.setLineDash([])
 
-    // Optimal label
     ctx.fillStyle = '#7c3aed'
     ctx.font = 'bold 10px system-ui'
     ctx.textAlign = 'center'
     ctx.fillText(`Optimal ${Math.round(optimalPct * 100)}%`, optX, pad.top - 4)
     ctx.fillText(fmt(optimalEv), optX, pad.top + 10)
 
-    // X axis labels
     ctx.fillStyle = '#6b7280'
     ctx.font = '10px system-ui'
     ctx.textAlign = 'center'
@@ -221,7 +242,6 @@ export default function MarketIntelligence() {
       ctx.fillText(p + '%', x, pad.top + chartH + 16)
     }
 
-    // Left Y axis (EV $)
     ctx.textAlign = 'right'
     for (let i = 0; i <= 5; i++) {
       const val = (rack * i) / 5
@@ -229,7 +249,6 @@ export default function MarketIntelligence() {
       ctx.fillText(fmt(val), pad.left - 6, y + 3)
     }
 
-    // Right Y axis (%)
     ctx.textAlign = 'left'
     for (let i = 0; i <= 5; i++) {
       const val = (100 * i) / 5
@@ -237,7 +256,6 @@ export default function MarketIntelligence() {
       ctx.fillText(Math.round(val) + '%', pad.left + chartW + 6, y + 3)
     }
 
-    // Axis labels
     ctx.save()
     ctx.translate(14, pad.top + chartH / 2)
     ctx.rotate(-Math.PI / 2)
@@ -257,131 +275,267 @@ export default function MarketIntelligence() {
       <div className="mb-6">
         <h1 className="text-2xl font-semibold text-gray-900">Market Intelligence</h1>
         <p className="text-sm text-gray-500 mt-1">
-          Seasonal demand across all {resorts.length} MVC resorts, yield rankings, rental pricing data, and the price-to-sell model.
+          Seasonal demand, yield rankings, and rental pricing across {resorts.length} MVC resorts. Select regions or states below to explore.
         </p>
       </div>
 
-      {/* ── 1. Filterable Heatmap ─────────────────────────────────────────────── */}
-      <div className="section-label">Seasonal demand heatmap &mdash; all MVC resorts by month</div>
-      <div className="flex gap-1.5 mb-3">
-        {REGION_FILTERS.map(f => (
-          <button key={f.value} onClick={() => setRegionFilter(f.value)}
-            className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-              regionFilter === f.value
-                ? 'bg-green-600 text-white'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}>
-            {f.label}
-          </button>
-        ))}
+      {/* ── Global Filters ────────────────────────────────────────────────────── */}
+      <div className="card mb-6">
+        <div className="flex items-start gap-6">
+          <div className="flex-1">
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Region</div>
+            <div className="flex flex-wrap gap-1.5">
+              {ALL_REGIONS.map(r => (
+                <button key={r.value} onClick={() => setSelectedRegions(prev => toggleSet(prev, r.value))}
+                  className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                    selectedRegions.has(r.value)
+                      ? 'bg-green-600 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}>
+                  {r.label}
+                  {selectedRegions.has(r.value) && (
+                    <span className="ml-1 opacity-75">({resorts.filter(
+                      re => re.region === r.value
+                    ).length})</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex-1">
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">State / Location</div>
+            <div className="flex flex-wrap gap-1.5">
+              {(selectedRegions.size > 0 ? availableStates : ALL_STATES).map(st => (
+                <button key={st} onClick={() => setSelectedStates(prev => toggleSet(prev, st))}
+                  className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                    selectedStates.has(st)
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}>
+                  {st}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex flex-col gap-1.5 pt-5">
+            {hasFilters && (
+              <button onClick={() => { setSelectedRegions(new Set()); setSelectedStates(new Set()) }}
+                className="px-3 py-1 text-xs font-medium rounded-md bg-red-50 text-red-600 hover:bg-red-100 transition-colors whitespace-nowrap">
+                Clear all
+              </button>
+            )}
+            <div className="text-xs text-gray-400 whitespace-nowrap">
+              {hasFilters ? `${filteredResorts.length} resorts` : 'Select to filter'}
+            </div>
+          </div>
+        </div>
       </div>
-      <div className="card mb-6 overflow-x-auto">
-        <div style={{ display: 'grid', gridTemplateColumns: '220px repeat(12, 1fr)', gap: '3px', minWidth: '800px' }}>
-          <div />
-          {MONTHS.map(m => (
-            <div key={m} className="text-center text-xs font-semibold text-gray-500 py-1">{m}</div>
-          ))}
-          {heatmapResorts.map(r => (
-            <div key={r.id} className="contents">
-              <div className="flex items-center text-xs text-gray-600 font-medium pr-2 truncate" title={`${r.name} — ${r.location}`}>
-                {r.name}
+
+      {!hasFilters ? (
+        <div className="card text-center py-12 mb-6">
+          <div className="text-gray-400 text-sm">Select one or more regions or states above to view resort data.</div>
+          <div className="flex justify-center gap-2 mt-4">
+            <button onClick={() => setSelectedRegions(new Set(['hawaii'] as Region[]))}
+              className="px-4 py-1.5 text-xs font-medium rounded-md bg-green-50 text-green-700 hover:bg-green-100 transition-colors">
+              Hawaii
+            </button>
+            <button onClick={() => setSelectedRegions(new Set(['florida'] as Region[]))}
+              className="px-4 py-1.5 text-xs font-medium rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors">
+              Florida
+            </button>
+            <button onClick={() => setSelectedRegions(new Set(ALL_REGIONS.map(r => r.value)))}
+              className="px-4 py-1.5 text-xs font-medium rounded-md bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors">
+              Show all
+            </button>
+          </div>
+        </div>
+      ) : (
+      <>
+        {/* ── 1. Heatmap ───────────────────────────────────────────────────────── */}
+        <div className="section-label">Seasonal demand heatmap &mdash; {filteredResorts.length} resorts</div>
+        <div className="card mb-6 overflow-x-auto">
+          <div style={{ display: 'grid', gridTemplateColumns: '220px repeat(12, 1fr)', gap: '3px', minWidth: '800px' }}>
+            <div />
+            {MONTHS.map(m => (
+              <div key={m} className="text-center text-xs font-semibold text-gray-500 py-1">{m}</div>
+            ))}
+            {filteredResorts.map(r => (
+              <div key={r.id} className="contents">
+                <div className="flex items-center text-xs text-gray-600 font-medium pr-2 truncate" title={`${r.name} \u2014 ${r.location}`}>
+                  {r.name}
+                </div>
+                {r.demandByMonth.map((d, mi) => {
+                  const rate = r.marketRates.low + (r.marketRates.peak - r.marketRates.low) * ((d - 1) / 9)
+                  return (
+                    <div key={mi}
+                      title={`${r.name} ${MONTHS[mi]}: demand ${d}/10 \xB7 est. ${fmt(rate)}/wk`}
+                      className="rounded flex items-center justify-center cursor-default hover:opacity-80 transition-opacity"
+                      style={{ background: heatColor(d), color: heatTextColor(d), height: '28px', fontSize: '10px', fontWeight: 600 }}>
+                      {d}
+                    </div>
+                  )
+                })}
               </div>
-              {r.demandByMonth.map((d, mi) => {
-                const rate = r.marketRates.low + (r.marketRates.peak - r.marketRates.low) * ((d - 1) / 9)
+            ))}
+          </div>
+          <div className="flex items-center gap-1 mt-3 text-xs text-gray-400">
+            <span>Demand scale:</span>
+            {Array.from({ length: 10 }, (_, i) => (
+              <div key={i} className="w-5 h-3.5 rounded-sm border border-gray-200"
+                style={{ background: heatColor(i + 1) }} />
+            ))}
+            <span>Low &rarr; Peak</span>
+          </div>
+        </div>
+
+        {/* ── 2. Yield Rankings ─────────────────────────────────────────────────── */}
+        <div className="flex items-center justify-between mb-2">
+          <div className="section-label" style={{ margin: 0 }}>Yield rankings &mdash; $/point by season</div>
+          <div className="flex gap-1">
+            {(['low', 'avg', 'peak'] as const).map(s => (
+              <button key={s} onClick={() => setYieldSeason(s)}
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                  yieldSeason === s ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}>
+                {s === 'avg' ? 'Mid' : s.charAt(0).toUpperCase() + s.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="tbl-wrap mb-6">
+          <table>
+            <thead>
+              <tr>
+                <th>Resort</th>
+                <th>Region</th>
+                <th className="text-right">Low $/pt</th>
+                <th className="text-right">Avg $/pt</th>
+                <th className="text-right">Peak $/pt</th>
+                <th>Best Season</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {yieldRanked.map(r => {
+                const yLow = getYieldPerPoint(r, 'low')
+                const yAvg = getYieldPerPoint(r, 'avg')
+                const yPeak = getYieldPerPoint(r, 'peak')
+                const active = yieldSeason === 'low' ? yLow : yieldSeason === 'avg' ? yAvg : yPeak
+                const rowBg = active >= 1.0 ? '#f0fdf4' : active >= 0.75 ? '#fffbeb' : undefined
+                const best = yLow >= yAvg && yLow >= yPeak ? 'Low' : yAvg >= yPeak ? 'Mid' : 'Peak'
                 return (
-                  <div key={mi}
-                    title={`${r.name} ${MONTHS[mi]}: demand ${d}/10 \xB7 est. ${fmt(rate)}/wk`}
-                    className="rounded flex items-center justify-center cursor-default hover:opacity-80 transition-opacity"
-                    style={{ background: heatColor(d), color: heatTextColor(d), height: '28px', fontSize: '10px', fontWeight: 600 }}>
-                    {d}
-                  </div>
+                  <tr key={r.id} style={{ background: rowBg }}>
+                    <td className="font-medium text-sm">
+                      <div>{r.name}</div>
+                      <div className="text-xs text-gray-400">{r.location}</div>
+                    </td>
+                    <td>
+                      <span className={`chip ${
+                        r.region === 'hawaii' ? 'chip-green' :
+                        r.region === 'international' ? 'chip-blue' :
+                        r.region === 'california' || r.region === 'nevada' ? 'chip-amber' :
+                        'chip-gray'
+                      }`} style={{ textTransform: 'capitalize', fontSize: '10px' }}>
+                        {r.region}
+                      </span>
+                    </td>
+                    <td className={`text-right font-semibold ${yLow >= 1.0 ? 'text-green-700' : yLow >= 0.75 ? 'text-amber-700' : 'text-gray-500'}`}>
+                      ${yLow.toFixed(2)}
+                    </td>
+                    <td className={`text-right font-semibold ${yAvg >= 1.0 ? 'text-green-700' : yAvg >= 0.75 ? 'text-amber-700' : 'text-gray-500'}`}>
+                      ${yAvg.toFixed(2)}
+                    </td>
+                    <td className={`text-right font-semibold ${yPeak >= 1.0 ? 'text-green-700' : yPeak >= 0.75 ? 'text-amber-700' : 'text-gray-500'}`}>
+                      ${yPeak.toFixed(2)}
+                    </td>
+                    <td className="text-xs">{best}</td>
+                    <td className="text-xs text-gray-400 max-w-[220px] truncate" title={r.notes}>{r.notes}</td>
+                  </tr>
                 )
               })}
-            </div>
-          ))}
+            </tbody>
+          </table>
         </div>
-        <div className="flex items-center gap-1 mt-3 text-xs text-gray-400">
-          <span>Demand scale:</span>
-          {Array.from({ length: 10 }, (_, i) => (
-            <div key={i} className="w-5 h-3.5 rounded-sm border border-gray-200"
-              style={{ background: heatColor(i + 1) }} />
-          ))}
-          <span>Low &rarr; Peak</span>
-          <span className="ml-4 text-gray-300">|</span>
-          <span className="ml-2">{heatmapResorts.length} resorts shown</span>
-        </div>
-      </div>
 
-      {/* ── 2. Yield Rankings ─────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between mb-2">
-        <div className="section-label" style={{ margin: 0 }}>Yield rankings &mdash; best value bookings by $/point</div>
-        <div className="flex gap-1">
-          {(['low', 'avg', 'peak'] as const).map(s => (
-            <button key={s} onClick={() => setYieldSeason(s)}
-              className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                yieldSeason === s ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}>
-              {s === 'avg' ? 'Mid' : s.charAt(0).toUpperCase() + s.slice(1)}
-            </button>
-          ))}
+        {/* ── 3. Market Data Table ──────────────────────────────────────────────── */}
+        <div className="flex items-center justify-between mb-2">
+          <div className="section-label" style={{ margin: 0 }}>Market data &mdash; {filteredResorts.length} resorts</div>
+          <input type="text" placeholder="Search within results..." value={tableSearch}
+            onChange={e => setTableSearch(e.target.value)}
+            className="border border-gray-200 rounded px-3 py-1.5 text-sm w-56" />
         </div>
-      </div>
-      <div className="tbl-wrap mb-6">
-        <table>
-          <thead>
-            <tr>
-              <th>Resort</th>
-              <th>Region</th>
-              <th className="text-right">Low $/pt</th>
-              <th className="text-right">Avg $/pt</th>
-              <th className="text-right">Peak $/pt</th>
-              <th>Best Season</th>
-              <th>Notes</th>
-            </tr>
-          </thead>
-          <tbody>
-            {getRankedByYield(yieldSeason).map(r => {
-              const yLow = getYieldPerPoint(r, 'low')
-              const yAvg = getYieldPerPoint(r, 'avg')
-              const yPeak = getYieldPerPoint(r, 'peak')
-              const active = yieldSeason === 'low' ? yLow : yieldSeason === 'avg' ? yAvg : yPeak
-              const rowBg = active >= 1.0 ? '#f0fdf4' : active >= 0.75 ? '#fffbeb' : undefined
-              const best = yLow >= yAvg && yLow >= yPeak ? 'Low' : yAvg >= yPeak ? 'Mid' : 'Peak'
-              return (
-                <tr key={r.id} style={{ background: rowBg }}>
-                  <td className="font-medium text-sm">
-                    <div>{r.name}</div>
-                    <div className="text-xs text-gray-400">{r.location}</div>
-                  </td>
-                  <td>
-                    <span className={`chip ${
-                      r.region === 'hawaii' ? 'chip-green' :
-                      r.region === 'international' ? 'chip-blue' :
-                      r.region === 'california' || r.region === 'nevada' ? 'chip-amber' :
-                      'chip-gray'
-                    }`} style={{ textTransform: 'capitalize', fontSize: '10px' }}>
-                      {r.region}
-                    </span>
-                  </td>
-                  <td className={`text-right font-semibold ${yLow >= 1.0 ? 'text-green-700' : yLow >= 0.75 ? 'text-amber-700' : 'text-gray-500'}`}>
-                    ${yLow.toFixed(2)}
-                  </td>
-                  <td className={`text-right font-semibold ${yAvg >= 1.0 ? 'text-green-700' : yAvg >= 0.75 ? 'text-amber-700' : 'text-gray-500'}`}>
-                    ${yAvg.toFixed(2)}
-                  </td>
-                  <td className={`text-right font-semibold ${yPeak >= 1.0 ? 'text-green-700' : yPeak >= 0.75 ? 'text-amber-700' : 'text-gray-500'}`}>
-                    ${yPeak.toFixed(2)}
-                  </td>
-                  <td className="text-xs">{best}</td>
-                  <td className="text-xs text-gray-400 max-w-[220px] truncate" title={r.notes}>{r.notes}</td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
+        <div className="tbl-wrap mb-6">
+          <table>
+            <thead>
+              <tr>
+                <th className="cursor-pointer select-none" onClick={() => handleSort('name')}>
+                  Resort{sortIcon('name')}
+                </th>
+                <th className="cursor-pointer select-none" onClick={() => handleSort('location')}>
+                  Location{sortIcon('location')}
+                </th>
+                <th className="text-right cursor-pointer select-none" onClick={() => handleSort('low')}>
+                  Low/wk{sortIcon('low')}
+                </th>
+                <th className="text-right cursor-pointer select-none" onClick={() => handleSort('avg')}>
+                  Avg/wk{sortIcon('avg')}
+                </th>
+                <th className="text-right cursor-pointer select-none" onClick={() => handleSort('peak')}>
+                  Peak/wk{sortIcon('peak')}
+                </th>
+                <th className="text-right cursor-pointer select-none" onClick={() => handleSort('pts')}>
+                  Pts (peak){sortIcon('pts')}
+                </th>
+                <th className="text-right cursor-pointer select-none" onClick={() => handleSort('yield')}>
+                  $/pt yield{sortIcon('yield')}
+                </th>
+                <th className="cursor-pointer select-none" onClick={() => handleSort('source')}>
+                  Source{sortIcon('source')}
+                </th>
+                <th>Comps</th>
+              </tr>
+            </thead>
+            <tbody>
+              {marketTableData.map(r => {
+                const yld = getYieldPerPoint(r, 'peak')
+                const isOwned = OWNED_NAMES.has(r.name) ||
+                  (r.name === 'Canyon Villas' && (OWNED_NAMES.has('Canyon Villas A') || OWNED_NAMES.has('Canyon Villas B'))) ||
+                  (r.name === 'Ocean Pointe (Oceanfront)' && (OWNED_NAMES.has('Ocean Pointe A') || OWNED_NAMES.has('Ocean Pointe B'))) ||
+                  (r.name.includes('Maui Ocean Club') && OWNED_NAMES.has('Maui Ocean Club'))
+                return (
+                  <tr key={r.id}>
+                    <td className="font-medium text-sm">{r.name}</td>
+                    <td className="text-xs text-gray-500">{r.location}</td>
+                    <td className="text-right">{fmt(r.marketRates.low)}</td>
+                    <td className="text-right">{fmt(r.marketRates.avg)}</td>
+                    <td className="text-right font-medium">{fmt(r.marketRates.peak)}</td>
+                    <td className="text-right text-xs">{r.pointCosts.peak.toLocaleString()}</td>
+                    <td className={`text-right font-bold ${yld >= 1.0 ? 'text-green-700' : yld >= 0.75 ? 'text-amber-700' : 'text-gray-500'}`}>
+                      ${yld.toFixed(2)}
+                    </td>
+                    <td className="text-xs text-gray-400 max-w-[180px] truncate" title={r.marketRates.source}>
+                      {r.marketRates.source}
+                    </td>
+                    <td>
+                      {isOwned ? (
+                        <button onClick={() => setCompsResort(r.name)}
+                          className="px-2 py-0.5 text-xs font-medium rounded bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors whitespace-nowrap">
+                          Fetch Comps
+                        </button>
+                      ) : (
+                        <span className="text-xs text-gray-300">&mdash;</span>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </>
+      )}
 
-      {/* ── 3. Price-to-sell curve ────────────────────────────────────────────── */}
+      {/* ── Price-to-sell curve (always visible) ─────────────────────────────── */}
       <div className="section-label">Price-to-sell probability model</div>
       <div className="card mb-6">
         <p className="text-sm text-gray-500 mb-4">
@@ -426,83 +580,7 @@ export default function MarketIntelligence() {
         <canvas ref={canvasRef} width={800} height={280} className="w-full" />
       </div>
 
-      {/* ── 4. Market Data Table ──────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between mb-2">
-        <div className="section-label" style={{ margin: 0 }}>Market data &mdash; all {resorts.length} resorts</div>
-        <input type="text" placeholder="Search resorts..." value={tableSearch}
-          onChange={e => setTableSearch(e.target.value)}
-          className="border border-gray-200 rounded px-3 py-1.5 text-sm w-56" />
-      </div>
-      <div className="tbl-wrap mb-6">
-        <table>
-          <thead>
-            <tr>
-              <th className="cursor-pointer select-none" onClick={() => handleSort('name')}>
-                Resort{sortIcon('name')}
-              </th>
-              <th className="cursor-pointer select-none" onClick={() => handleSort('location')}>
-                Location{sortIcon('location')}
-              </th>
-              <th className="text-right cursor-pointer select-none" onClick={() => handleSort('low')}>
-                Low/wk{sortIcon('low')}
-              </th>
-              <th className="text-right cursor-pointer select-none" onClick={() => handleSort('avg')}>
-                Avg/wk{sortIcon('avg')}
-              </th>
-              <th className="text-right cursor-pointer select-none" onClick={() => handleSort('peak')}>
-                Peak/wk{sortIcon('peak')}
-              </th>
-              <th className="text-right cursor-pointer select-none" onClick={() => handleSort('pts')}>
-                Pts (peak){sortIcon('pts')}
-              </th>
-              <th className="text-right cursor-pointer select-none" onClick={() => handleSort('yield')}>
-                $/pt yield{sortIcon('yield')}
-              </th>
-              <th className="cursor-pointer select-none" onClick={() => handleSort('source')}>
-                Source{sortIcon('source')}
-              </th>
-              <th>Comps</th>
-            </tr>
-          </thead>
-          <tbody>
-            {marketTableData.map(r => {
-              const yld = getYieldPerPoint(r, 'peak')
-              const isOwned = OWNED_NAMES.has(r.name) ||
-                (r.name === 'Canyon Villas' && (OWNED_NAMES.has('Canyon Villas A') || OWNED_NAMES.has('Canyon Villas B'))) ||
-                (r.name === 'Ocean Pointe (Oceanfront)' && (OWNED_NAMES.has('Ocean Pointe A') || OWNED_NAMES.has('Ocean Pointe B'))) ||
-                (r.name.includes('Maui Ocean Club') && OWNED_NAMES.has('Maui Ocean Club'))
-              return (
-                <tr key={r.id}>
-                  <td className="font-medium text-sm">{r.name}</td>
-                  <td className="text-xs text-gray-500">{r.location}</td>
-                  <td className="text-right">{fmt(r.marketRates.low)}</td>
-                  <td className="text-right">{fmt(r.marketRates.avg)}</td>
-                  <td className="text-right font-medium">{fmt(r.marketRates.peak)}</td>
-                  <td className="text-right text-xs">{r.pointCosts.peak.toLocaleString()}</td>
-                  <td className={`text-right font-bold ${yld >= 1.0 ? 'text-green-700' : yld >= 0.75 ? 'text-amber-700' : 'text-gray-500'}`}>
-                    ${yld.toFixed(2)}
-                  </td>
-                  <td className="text-xs text-gray-400 max-w-[180px] truncate" title={r.marketRates.source}>
-                    {r.marketRates.source}
-                  </td>
-                  <td>
-                    {isOwned ? (
-                      <button onClick={() => setCompsResort(r.name)}
-                        className="px-2 py-0.5 text-xs font-medium rounded bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors whitespace-nowrap">
-                        Fetch Comps
-                      </button>
-                    ) : (
-                      <span className="text-xs text-gray-300">&mdash;</span>
-                    )}
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      {/* ── 5. Comps Modal ────────────────────────────────────────────────────── */}
+      {/* ── Comps Modal ───────────────────────────────────────────────────────── */}
       {compsResort && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.4)' }}>
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg p-6">
