@@ -83,8 +83,9 @@ export const historicalTrips: HistoricalBlock[] = [
 ]
 
 // Convert to day-level blocks for the schedule component
-export function getBlocksForYear(year: number): Record<string, { type: 'dave' | 'sarah' | 'jim' | 'rental', label: string }> {
-  const blocks: Record<string, { type: 'dave' | 'sarah' | 'jim' | 'rental', label: string }> = {}
+// Returns multi-member format: each day has a Set of assigned members
+export function getBlocksForYear(year: number): Record<string, { type: 'dave' | 'sarah' | 'jim' | 'rental', label: string, members: Set<'dave' | 'sarah' | 'jim' | 'rental'> }> {
+  const blocks: Record<string, { type: 'dave' | 'sarah' | 'jim' | 'rental', label: string, members: Set<'dave' | 'sarah' | 'jim' | 'rental'> }> = {}
 
   historicalTrips
     .filter(trip => trip.startDate.startsWith(String(year)))
@@ -94,7 +95,10 @@ export function getBlocksForYear(year: number): Record<string, { type: 'dave' | 
       const current = new Date(start)
       while (current < end) {
         const key = current.toISOString().split('T')[0]
-        blocks[key] = { type: trip.member, label: trip.label }
+        if (!blocks[key]) {
+          blocks[key] = { type: trip.member, label: trip.label, members: new Set() }
+        }
+        blocks[key].members.add(trip.member)
         current.setDate(current.getDate() + 1)
       }
     })

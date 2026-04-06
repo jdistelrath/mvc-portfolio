@@ -5,10 +5,11 @@ import { getBlocksForYear, getPointsForYear } from '../../data/historicalSchedul
 const MONTHS_FULL = ['January','February','March','April','May','June',
   'July','August','September','October','November','December']
 
-type BlockType = 'dave' | 'sarah' | 'jim' | 'rental'
+type MemberType = 'dave' | 'sarah' | 'jim' | 'rental'
 
+// Each day can have multiple members assigned simultaneously
 interface DayBlock {
-  type: BlockType
+  members: Set<MemberType>
 }
 
 const memberColors: Record<string, string> = {
@@ -25,40 +26,141 @@ const memberTextColors: Record<string, string> = {
   rental: '#14532d',
 }
 
+const memberLabels: Record<string, string> = {
+  dave: 'D',
+  sarah: 'S',
+  jim: 'J',
+  rental: '$',
+}
+
+// Convert historical single-member blocks to multi-member format
+function historicalToMulti(year: number): Record<string, DayBlock> {
+  const raw = getBlocksForYear(year)
+  const result: Record<string, DayBlock> = {}
+  for (const [key, val] of Object.entries(raw)) {
+    if (!result[key]) result[key] = { members: new Set() }
+    result[key].members.add(val.type)
+  }
+  return result
+}
+
+// Serialize/deserialize Sets for state (Sets aren't directly clonable)
+function cloneBlocks(blocks: Record<string, DayBlock>): Record<string, DayBlock> {
+  const out: Record<string, DayBlock> = {}
+  for (const [k, v] of Object.entries(blocks)) {
+    out[k] = { members: new Set(v.members) }
+  }
+  return out
+}
+
 export default function Schedule() {
   const [year, setYear] = useState(2026)
-  const [activeMember, setActiveMember] = useState<BlockType>('dave')
-    const [yearBlocks, setYearBlocks] = useState<Record<number, Record<string, DayBlock>>>({})
+  const [activeMember, setActiveMember] = useState<MemberType>('dave')
+  const [yearBlocks, setYearBlocks] = useState<Record<number, Record<string, DayBlock>>>({})
 
-  const blocks = yearBlocks[year] ?? getBlocksForYear(year)
+  const blocks = yearBlocks[year] ?? historicalToMulti(year)
 
-    // blocks already initialized above with historical data for past years
-
-    const toggleDay = (dateKey: string) => {
+  const toggleDay = (dateKey: string) => {
     setYearBlocks(prev => {
-      const current = prev[year] ?? getBlocksForYear(year)
-      const existing = current[dateKey]
-      if (existing?.type === activeMember) {
-        const next = { ...current }
-        delete next[dateKey]
-        return { ...prev, [year]: next }
+      const current = cloneBlocks(prev[year] ?? historicalToMulti(year))
+      if (!current[dateKey]) current[dateKey] = { members: new Set() }
+
+      const day = current[dateKey]
+      if (day.members.has(activeMember)) {
+        day.members.delete(activeMember)
+        if (day.members.size === 0) delete current[dateKey]
+      } else {
+        day.members.add(activeMember)
       }
-      return { ...prev, [year]: { ...current, [dateKey]: { type: activeMember } } }
+      return { ...prev, [year]: current }
     })
   }
 
-   const clearAll = () => setYearBlocks(prev => ({ ...prev, [year]: {} }))
+  const clearAll = () => setYearBlocks(prev => ({ ...prev, [year]: {} }))
 
   const exportJSON = () => {
-    const blob = new Blob([JSON.stringify(blocks, null, 2)], { type: 'application/json' })
+    // Convert Sets to arrays for JSON serialization
+    const serializable: Record<string, { members: string[] }> = {}
+    for (const [k, v] of Object.entries(blocks)) {
+      serializable[k] = { members: [...v.members] }
+    }
+    const blob = new Blob([JSON.stringify(serializable, null, 2)], { type: 'application/json' })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
     a.download = `mvc-schedule-${year}.json`
     a.click()
   }
 
-    const counts = { dave: 0, sarah: 0, jim: 0, rental: 0, conflict: 0 }
-    Object.values(blocks).forEach(b => { counts[b.type as keyof typeof counts]++ })
+  // Count days per member (a day with 2 members counts for both)
+  const counts = { dave: 0, sarah: 0, jim: 0, rental: 0 }
+  Object.values(blocks).forEach(b => {
+    b.members.forEach(m => { counts[m]++ })
+  })
+
+  const renderDayCell = (day: number, dateKey: string) => {
+    const block = blocks[dateKey]
+    const assignedMembers = block ? [...block.members] : []
+    const isEmpty = assignedMembers.length === 0
+
+    if (isEmpty) {
+      return (
+        <div key={day}
+          onClick={() => toggleDay(dateKey)}
+          className="relative cursor-pointer rounded text-xs flex items-center justify-center transition-all hover:opacity-80"
+          style={{
+            height: '32px',
+            background: '#f9fafb',
+            border: '1px solid #e5e7eb',
+            color: '#6b7280',
+          }}>
+          <span>{day}</span>
+        </div>
+      )
+    }
+
+    // Split the cell into sections — one per assigned member
+    const sectionHeight = Math.floor(32 / assignedMembers.length)
+
+    return (
+      <div key={day}
+        onClick={() => toggleDay(dateKey)}
+        className="relative cursor-pointer rounded overflow-hidden transition-all hover:opacity-80"
+        style={{ height: '32px', border: '1px solid #d1d5db' }}
+        title={assignedMembers.map(m => m === 'rental' ? 'Rental' : m.charAt(0).toUpperCase() + m.slice(1)).join(' + ')}>
+        {assignedMembers.map((m, i) => (
+          <div key={m}
+            className="flex items-center justify-center"
+            style={{
+              height: i === assignedMembers.length - 1
+                ? `${32 - sectionHeight * i}px`  // last section gets remaining space
+                : `${sectionHeight}px`,
+              background: memberColors[m],
+              color: memberTextColors[m],
+              fontSize: assignedMembers.length > 2 ? '7px' : assignedMembers.length > 1 ? '8px' : '10px',
+              fontWeight: 600,
+              lineHeight: 1,
+              borderBottom: i < assignedMembers.length - 1 ? '1px solid rgba(255,255,255,0.6)' : 'none',
+            }}>
+            {assignedMembers.length === 1 ? (
+              <span className="flex flex-col items-center">
+                <span style={{ fontSize: '10px' }}>{day}</span>
+                <span style={{ fontSize: '7px' }}>{memberLabels[m]}</span>
+              </span>
+            ) : (
+              <span>{memberLabels[m]}</span>
+            )}
+          </div>
+        ))}
+        {/* Overlay the day number when multi-assigned */}
+        {assignedMembers.length > 1 && (
+          <span className="absolute inset-0 flex items-center justify-center pointer-events-none"
+            style={{ fontSize: '8px', fontWeight: 700, color: '#374151', textShadow: '0 0 2px rgba(255,255,255,0.8)' }}>
+            {day}
+          </span>
+        )}
+      </div>
+    )
+  }
 
   const renderMonth = (monthIdx: number) => {
     const firstDay = new Date(year, monthIdx, 1).getDay()
@@ -79,27 +181,7 @@ export default function Schedule() {
           {Array.from({ length: daysInMonth }, (_, i) => {
             const day = i + 1
             const dateKey = `${year}-${String(monthIdx + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-            const block = blocks[dateKey]
-
-            return (
-              <div key={day}
-                onClick={() => toggleDay(dateKey)}
-                className="relative cursor-pointer rounded text-xs flex flex-col items-center justify-center transition-all hover:opacity-80"
-                style={{
-                  height: '28px',
-                  background: block ? memberColors[block.type] : '#f9fafb',
-                  border: block ? `1px solid ${memberTextColors[block.type]}33` : '1px solid #e5e7eb',
-                  color: block ? memberTextColors[block.type] : '#6b7280',
-                  fontWeight: block ? 600 : 400,
-                }}>
-                <span>{day}</span>
-                {block && (
-                  <span style={{ fontSize: '7px', lineHeight: 1 }}>
-                    {block.type === 'rental' ? '$' : block.type[0].toUpperCase()}
-                  </span>
-                )}
-              </div>
-            )
+            return renderDayCell(day, dateKey)
           })}
         </div>
       </div>
@@ -110,10 +192,13 @@ export default function Schedule() {
     <div>
       <div className="mb-6">
         <h1 className="text-2xl font-semibold text-gray-900">Family Schedule</h1>
-        <p className="text-sm text-gray-500 mt-1">Block weeks for each member or mark as rental. Click a day to assign, click again to clear.</p>
+        <p className="text-sm text-gray-500 mt-1">
+          Block weeks for each member or mark as rental. Multiple members can share the same day.
+          Click to assign the active member; click again to remove.
+        </p>
       </div>
 
-            {/* Year selector */}
+      {/* Year selector */}
       <div className="flex gap-2 mb-4">
         {[2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026, 2027].map(yr => (
           <button key={yr}
@@ -133,8 +218,8 @@ export default function Schedule() {
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-gray-700">Assign to:</span>
           <div className="flex gap-2">
-            {([...account.members.map(m => ({ id: m.id as BlockType, name: m.name, color: m.color })),
-               { id: 'rental' as BlockType, name: 'Rental', color: memberColors.rental }
+            {([...account.members.map(m => ({ id: m.id as MemberType, name: m.name, color: m.color })),
+               { id: 'rental' as MemberType, name: 'Rental', color: memberColors.rental }
             ]).map(m => (
               <button key={m.id}
                 onClick={() => setActiveMember(m.id)}
@@ -156,7 +241,7 @@ export default function Schedule() {
         </div>
       </div>
 
-{/* Summary */}
+      {/* Summary */}
       <div className="grid grid-cols-5 gap-3 mb-6">
         {[
           { label: 'Dave', key: 'dave' as const, color: memberColors.dave, textColor: memberTextColors.dave },
@@ -181,11 +266,11 @@ export default function Schedule() {
         <div className="metric-card">
           <div className="text-xs font-medium text-gray-500 mb-1">Total</div>
           <div className="text-xl font-semibold text-gray-900">
-             {Object.values(getPointsForYear(year)).reduce((s, n) => s + (n || 0), 0).toLocaleString()}
+            {Object.values(getPointsForYear(year)).reduce((s, n) => s + (n || 0), 0).toLocaleString()}
           </div>
           <div className="text-xs text-gray-400">pts used</div>
           <div className="text-xs text-gray-400 mt-0.5">
-            {Object.values(counts).reduce((s, n) => s + n, 0)} days
+            {Object.values(counts).reduce((s, n) => s + n, 0)} member-days
           </div>
         </div>
       </div>
@@ -210,6 +295,13 @@ export default function Schedule() {
             {l.label}
           </span>
         ))}
+        <span className="text-gray-300 mx-1">|</span>
+        <span className="flex items-center gap-1">
+          <span className="w-3 h-3 rounded-sm inline-block" style={{
+            background: `linear-gradient(to bottom, ${memberColors.dave} 50%, ${memberColors.jim} 50%)`,
+          }} />
+          Shared day (split view)
+        </span>
       </div>
     </div>
   )
