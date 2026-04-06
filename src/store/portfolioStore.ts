@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { PlannedTrip, ScheduleBlock } from '../data/portfolio'
+// Static data imports — these will be replaced by API calls in Phase 3
 import { contracts, trustContracts, plannedTrips, TOTAL_CONFIRMED_FEES } from '../data/portfolio'
 
 interface ContractRentalSettings {

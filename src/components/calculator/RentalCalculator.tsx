@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { contracts, trustContracts, TOTAL_CONFIRMED_FEES, yearlyAllocations } from '../../data/portfolio'
+import { useState, useEffect } from 'react'
+import { useContracts, useTrustContracts, useTotalFees, useYearlyAllocations } from '../../hooks/usePortfolioData'
 
 const fmt = (n: number) => '$' + Math.round(n).toLocaleString()
 const fmtPts = (n: number) => Math.round(n).toLocaleString() + ' pts'
@@ -17,25 +17,37 @@ interface TrustSetting {
 }
 
 export default function RentalCalculator() {
+  const { data: contracts = [] } = useContracts()
+  const { data: trustContracts = [] } = useTrustContracts()
+  const { data: totalFees = 0 } = useTotalFees()
+  const { data: yearlyAllocations } = useYearlyAllocations()
+
   const [coveragePct, setCoveragePct] = useState(100)
+  const [weekSettings, setWeekSettings] = useState<WeekSetting[]>([])
+  const [trustSettings, setTrustSettings] = useState<TrustSetting[]>([])
 
-  const [weekSettings, setWeekSettings] = useState<WeekSetting[]>(
-    contracts.map(c => ({
-      contractId: c.id,
-      availableToRent: ['MU*9203*24*B', 'CV*3109*46*B', 'CV*3259*50*B'].includes(c.id),
-      ratePerPoint: c.defaultRate,
-    }))
-  )
+  // Initialize settings when data loads
+  useEffect(() => {
+    if (contracts.length > 0 && weekSettings.length === 0) {
+      setWeekSettings(contracts.map(c => ({
+        contractId: c.id,
+        availableToRent: ['MU*9203*24*B', 'CV*3109*46*B', 'CV*3259*50*B'].includes(c.id),
+        ratePerPoint: c.defaultRate,
+      })))
+    }
+  }, [contracts, weekSettings.length])
 
-  const [trustSettings, setTrustSettings] = useState<TrustSetting[]>(
-    trustContracts.map(t => ({
-      contractId: t.id,
-      ptsAllocated: 0,
-      ratePerPoint: t.defaultRate,
-    }))
-  )
+  useEffect(() => {
+    if (trustContracts.length > 0 && trustSettings.length === 0) {
+      setTrustSettings(trustContracts.map(t => ({
+        contractId: t.id,
+        ptsAllocated: 0,
+        ratePerPoint: t.defaultRate,
+      })))
+    }
+  }, [trustContracts, trustSettings.length])
 
-  const target = TOTAL_CONFIRMED_FEES * (coveragePct / 100)
+  const target = totalFees * (coveragePct / 100)
 
   const weekRevenue = contracts.reduce((sum, c) => {
     const s = weekSettings.find(x => x.contractId === c.id)
@@ -60,7 +72,7 @@ export default function RentalCalculator() {
 
   const trustRentalPts = trustSettings.reduce((sum, s) => sum + s.ptsAllocated, 0)
 
-  const totalPts = yearlyAllocations[2026].recurringTotal
+  const totalPts = yearlyAllocations?.[2026]?.recurringTotal ?? 0
   const personalPts = totalPts - rentalPts - trustRentalPts
 
   const toggleWeek = (contractId: string) => {
@@ -125,7 +137,7 @@ export default function RentalCalculator() {
                   background: coveragePct > 100 ? '#E24B4A' : coveragePct > 75 ? '#BA7517' : '#1D9E75'
                 }} />
             </div>
-            <div className="text-xs text-gray-400 mt-1">of {fmt(TOTAL_CONFIRMED_FEES)} total confirmed fees</div>
+            <div className="text-xs text-gray-400 mt-1">of {fmt(totalFees)} total confirmed fees</div>
           </div>
           <div className="flex-1 min-w-48">
             <div className="text-xs text-gray-500 mb-2">Fee breakdown</div>
@@ -143,14 +155,14 @@ export default function RentalCalculator() {
               </div>
             ))}
             <div className="flex justify-between text-xs py-1 font-semibold">
-              <span>Total</span><span>{fmt(TOTAL_CONFIRMED_FEES)}</span>
+              <span>Total</span><span>{fmt(totalFees)}</span>
             </div>
           </div>
           <div className="flex-1 min-w-48 text-sm text-gray-600 leading-relaxed">
             {coveragePct === 0 && 'No rental activity — 100% out-of-pocket on all fees.'}
-            {coveragePct > 0 && coveragePct < 100 && `Rentals cover ${coveragePct}% of fees — you pay roughly ${fmt(TOTAL_CONFIRMED_FEES - target)} out-of-pocket.`}
+            {coveragePct > 0 && coveragePct < 100 && `Rentals cover ${coveragePct}% of fees — you pay roughly ${fmt(totalFees - target)} out-of-pocket.`}
             {coveragePct === 100 && 'Rentals fully cover all maintenance — zero out-of-pocket.'}
-            {coveragePct > 100 && `Rentals exceed fees — estimated ${fmt(totalRevenue - TOTAL_CONFIRMED_FEES)} annual profit after all fees.`}
+            {coveragePct > 100 && `Rentals exceed fees — estimated ${fmt(totalRevenue - totalFees)} annual profit after all fees.`}
           </div>
         </div>
       </div>
@@ -166,7 +178,8 @@ export default function RentalCalculator() {
         </div>
         <div className="grid grid-cols-2 gap-3">
           {contracts.map((c) => {
-            const s = weekSettings.find(x => x.contractId === c.id)!
+            const s = weekSettings.find(x => x.contractId === c.id)
+            if (!s) return null
             const rev = s.availableToRent ? c.pts * s.ratePerPoint : 0
             return (
               <div key={c.id}
@@ -183,7 +196,6 @@ export default function RentalCalculator() {
                   </div>
                   <div className="flex flex-col items-end gap-1">
                     <div className="font-semibold">{c.pts.toLocaleString()} pts</div>
-                    {/* Toggle */}
                     <div onClick={e => { e.stopPropagation(); toggleWeek(c.id) }}
                       className={`w-8 h-4 rounded-full relative cursor-pointer transition-colors ${s.availableToRent ? 'bg-green-500' : 'bg-gray-300'}`}>
                       <div className={`absolute w-3 h-3 bg-white rounded-full top-0.5 transition-all ${s.availableToRent ? 'left-4' : 'left-0.5'}`} />
@@ -192,7 +204,7 @@ export default function RentalCalculator() {
                 </div>
                 <div className="flex justify-between items-center flex-wrap gap-2">
                   <span className="text-xs bg-blue-50 border border-blue-200 text-blue-700 px-2 py-0.5 rounded">
-                    {c.mktNote.split('·')[0].trim()}
+                    {c.mktNote.split('\xB7')[0].trim()}
                   </span>
                   <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
                     <span className="text-xs text-gray-400">$/pt:</span>
@@ -223,7 +235,8 @@ export default function RentalCalculator() {
         </div>
         <div className="space-y-4">
           {trustContracts.map((t) => {
-            const s = trustSettings.find(x => x.contractId === t.id)!
+            const s = trustSettings.find(x => x.contractId === t.id)
+            if (!s) return null
             const rev = s.ptsAllocated * s.ratePerPoint
             const pct = Math.round((s.ptsAllocated / t.pts) * 100)
             return (
@@ -267,9 +280,9 @@ export default function RentalCalculator() {
       <div className="bg-gray-100 rounded-xl p-5">
         <div className="grid grid-cols-3 gap-3 mb-4">
           {[
-            { label: 'Revenue target', value: fmt(target), sub: `${coveragePct}% of ${fmt(TOTAL_CONFIRMED_FEES)}`, color: 'text-gray-900' },
+            { label: 'Revenue target', value: fmt(target), sub: `${coveragePct}% of ${fmt(totalFees)}`, color: 'text-gray-900' },
             { label: 'Est. rental revenue', value: fmt(totalRevenue), sub: `${Math.round(coverage)}% of target`, color: coverageColor },
-            { label: 'Usable personal pts', value: fmtPts(personalPts), sub: `${Math.round(personalPts / totalPts * 100)}% of total portfolio`, color: personalColor },
+            { label: 'Usable personal pts', value: fmtPts(personalPts), sub: `${totalPts > 0 ? Math.round(personalPts / totalPts * 100) : 0}% of total portfolio`, color: personalColor },
           ].map(r => (
             <div key={r.label} className="bg-white border border-gray-200 rounded-lg p-3">
               <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">{r.label}</div>

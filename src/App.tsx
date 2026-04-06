@@ -1,5 +1,5 @@
 import { Routes, Route, NavLink } from 'react-router-dom'
-import { account } from './data/portfolio'
+import { useAccount } from './hooks/usePortfolioData'
 import Dashboard from './components/dashboard/Dashboard'
 import RentalCalculator from './components/calculator/RentalCalculator'
 import MarketIntelligence from './components/market/MarketIntelligence'
@@ -7,6 +7,8 @@ import Optimizer from './components/optimizer/Optimizer'
 import Schedule from './components/schedule/Schedule'
 
 export default function App() {
+  const { data: account } = useAccount()
+
   return (
     <div className="min-h-screen bg-gray-50">
       <nav className="bg-white border-b border-gray-200 sticky top-0 z-50">
@@ -15,7 +17,7 @@ export default function App() {
             <span className="font-semibold text-gray-900">MVC Portfolio</span>
             <span className="text-xs px-2 py-0.5 rounded-full font-semibold"
               style={{ background: 'var(--gold)', color: 'var(--gold-text)' }}>
-              {account.membershipLevel}
+              {account?.membershipLevel ?? ''}
             </span>
           </div>
           <div className="flex overflow-x-auto">
@@ -39,7 +41,7 @@ export default function App() {
             ))}
           </div>
           <div className="ml-auto flex items-center gap-2 pl-4">
-            {account.members.map(m => (
+            {account?.members.map(m => (
               <div key={m.id} title={m.name}
                 className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold cursor-pointer"
                 style={{ background: m.color, color: '#1a1a18' }}>

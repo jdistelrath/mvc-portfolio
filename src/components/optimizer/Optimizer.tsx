@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { contracts } from '../../data/portfolio'
+import { useContracts } from '../../hooks/usePortfolioData'
 import { getYieldPerPoint, getRankedByYield, type MVCResort } from '../../data/resortDatabase'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -57,6 +57,7 @@ interface ArbitrageRow {
 }
 
 export default function Optimizer() {
+  const { data: contracts = [] } = useContracts()
   const [mode, setMode] = useState<'standard' | 'arbitrage'>('standard')
   const [arbSeason, setArbSeason] = useState<'low' | 'avg' | 'peak'>('peak')
   const [coveragePct, setCoveragePct] = useState(100)

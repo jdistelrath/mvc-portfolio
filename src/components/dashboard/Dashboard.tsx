@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { contracts, trustContracts, liveBalances2026, totalAvailable2026, 
-         plannedTrips as initialTrips, TOTAL_CONFIRMED_FEES, account, yearlyAllocations } from '../../data/portfolio'
+import { useAccount, useContracts, useTrustContracts, useLiveBalances, useTotalAvailable, useTotalFees, usePlannedTrips, useYearlyAllocations } from '../../hooks/usePortfolioData'
+import type { PlannedTrip } from '../../data/portfolio'
 
 const fmt = (n: number) => '$' + Math.round(n).toLocaleString()
 const fmtPts = (n: number) => n.toLocaleString() + ' pts'
@@ -26,11 +26,23 @@ const alertTitleStyles: Record<string, string> = {
 }
 
 export default function Dashboard() {
-  const [trips, setTrips] = useState(initialTrips)
+  const { data: account } = useAccount()
+  const { data: contracts = [] } = useContracts()
+  const { data: trustContracts = [] } = useTrustContracts()
+  const { data: liveBalances = [] } = useLiveBalances()
+  const { data: totalAvailable = 0 } = useTotalAvailable()
+  const { data: totalFees = 0 } = useTotalFees()
+  const { data: initialTrips = [] } = usePlannedTrips()
+  const { data: yearlyAllocations } = useYearlyAllocations()
+
+  const [trips, setTrips] = useState<PlannedTrip[] | null>(null)
   const [editingGuest, setEditingGuest] = useState<string | null>(null)
   const [guestDraft, setGuestDraft] = useState('')
 
-  const used2026 = trips.filter(t => t.year === 2026).reduce((s, t) => s + t.pts, 0)
+  // Use local state if user has edited, otherwise use fetched data
+  const activeTrips = trips ?? initialTrips
+
+  const used2026 = activeTrips.filter(t => t.year === 2026).reduce((s, t) => s + t.pts, 0)
 
   const startEditGuest = (tripId: string, currentGuest: string) => {
     setEditingGuest(tripId)
@@ -38,7 +50,8 @@ export default function Dashboard() {
   }
 
   const saveGuest = (tripId: string) => {
-    setTrips(prev => prev.map(t => t.id === tripId ? { ...t, guest: guestDraft } : t))
+    const base = trips ?? initialTrips
+    setTrips(base.map(t => t.id === tripId ? { ...t, guest: guestDraft } : t))
     setEditingGuest(null)
   }
 
@@ -47,7 +60,7 @@ export default function Dashboard() {
       <div className="mb-6">
         <h1 className="text-2xl font-semibold text-gray-900">Portfolio Overview</h1>
         <p className="text-sm text-gray-500 mt-1">
-          {account.name} · {contracts.length} elected weeks · {trustContracts.length} trust contracts · as of April 2026
+          {account?.name ?? ''} · {contracts.length} elected weeks · {trustContracts.length} trust contracts · as of April 2026
         </p>
       </div>
 
@@ -55,17 +68,17 @@ export default function Dashboard() {
       <div className="grid grid-cols-4 gap-3 mb-4">
         <div className="metric-card">
           <div className="text-xs text-gray-500 mb-1">2026 points available</div>
-          <div className="text-xl font-semibold text-gray-900">{fmtPts(totalAvailable2026)}</div>
+          <div className="text-xl font-semibold text-gray-900">{fmtPts(totalAvailable)}</div>
           <div className="text-xs text-gray-400 mt-1">4,850 annual · 1,156 hold</div>
         </div>
         <div className="metric-card">
           <div className="text-xs text-gray-500 mb-1">Recurring annual allocation</div>
-          <div className="text-xl font-semibold text-gray-900">{fmtPts(yearlyAllocations[2026].recurringTotal)}</div>
+          <div className="text-xl font-semibold text-gray-900">{fmtPts(yearlyAllocations?.[2026]?.recurringTotal ?? 0)}</div>
           <div className="text-xs text-gray-400 mt-1">Elected + primary trust · excludes legacy</div>
         </div>
         <div className="metric-card">
           <div className="text-xs text-gray-500 mb-1">Confirmed 2026 fees</div>
-          <div className="text-xl font-semibold text-gray-900">{fmt(TOTAL_CONFIRMED_FEES)}</div>
+          <div className="text-xl font-semibold text-gray-900">{fmt(totalFees)}</div>
           <div className="text-xs text-gray-400 mt-1">6 contracts confirmed</div>
         </div>
         <div className="metric-card">
@@ -78,7 +91,8 @@ export default function Dashboard() {
       {/* Year allocation pills */}
       <div className="flex gap-3 mb-6">
         {([2026, 2027, 2028] as const).map(yr => {
-          const alloc = yearlyAllocations[yr]
+          const alloc = yearlyAllocations?.[yr]
+          if (!alloc) return null
           return (
             <div key={yr} className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-4 py-2">
               <span className="text-sm font-semibold text-gray-700">{yr}</span>
@@ -119,7 +133,7 @@ export default function Dashboard() {
                 <tr><th>Source</th><th>Type</th><th className="text-right">Points</th></tr>
               </thead>
               <tbody>
-                {liveBalances2026.map((b, i) => {
+                {liveBalances.map((b, i) => {
                   const contract = contracts.find(c => c.id === b.contractId) ||
                     trustContracts.find(c => c.id === b.contractId)
                   return (
@@ -138,7 +152,7 @@ export default function Dashboard() {
               <tfoot>
                 <tr className="bg-gray-50">
                   <td colSpan={2} className="font-semibold">Total available</td>
-                  <td className="text-right font-semibold">{totalAvailable2026.toLocaleString()}</td>
+                  <td className="text-right font-semibold">{totalAvailable.toLocaleString()}</td>
                 </tr>
               </tfoot>
             </table>
@@ -151,7 +165,7 @@ export default function Dashboard() {
                 <tr><th>Trip</th><th>Guest</th><th>Month</th><th className="text-right">Points</th><th>Status</th></tr>
               </thead>
               <tbody>
-                {trips.filter(t => t.year === 2026).map(t => (
+                {activeTrips.filter(t => t.year === 2026).map(t => (
                   <tr key={t.id}>
                     <td className="font-medium text-xs">{t.name}</td>
                     <td className="text-xs">

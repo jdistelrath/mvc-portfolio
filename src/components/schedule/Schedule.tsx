@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { account } from '../../data/portfolio'
+import { useAccount } from '../../hooks/usePortfolioData'
 import { getBlocksForYear, getPointsForYear } from '../../data/historicalSchedule'
 
 const MONTHS_FULL = ['January','February','March','April','May','June',
@@ -54,6 +54,7 @@ function cloneBlocks(blocks: Record<string, DayBlock>): Record<string, DayBlock>
 }
 
 export default function Schedule() {
+  const { data: account } = useAccount()
   const [year, setYear] = useState(2026)
   const [activeMember, setActiveMember] = useState<MemberType>('dave')
   const [yearBlocks, setYearBlocks] = useState<Record<number, Record<string, DayBlock>>>({})
@@ -218,7 +219,7 @@ export default function Schedule() {
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-gray-700">Assign to:</span>
           <div className="flex gap-2">
-            {([...account.members.map(m => ({ id: m.id as MemberType, name: m.name, color: m.color })),
+            {([...(account?.members ?? []).map(m => ({ id: m.id as MemberType, name: m.name, color: m.color })),
                { id: 'rental' as MemberType, name: 'Rental', color: memberColors.rental }
             ]).map(m => (
               <button key={m.id}

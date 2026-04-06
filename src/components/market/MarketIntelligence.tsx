@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { contracts } from '../../data/portfolio'
-import { resorts, getYieldPerPoint, type MVCResort } from '../../data/resortDatabase'
+import { useContracts, useResorts } from '../../hooks/usePortfolioData'
+import { getYieldPerPoint, type MVCResort } from '../../data/resortDatabase'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const fmt = (n: number) => '$' + Math.round(n).toLocaleString()
@@ -22,13 +22,8 @@ const ALL_REGIONS: { value: Region; label: string }[] = [
 
 function extractState(location: string): string {
   const parts = location.split(',').map(s => s.trim())
-  return parts[parts.length - 1] // "HI", "FL", "AZ", "CA", "NV", "SC", "Aruba"
+  return parts[parts.length - 1]
 }
-
-const ALL_STATES = [...new Set(resorts.map(r => extractState(r.location)))].sort()
-
-// Dave's owned contract names
-const OWNED_NAMES = new Set(contracts.map(c => c.name))
 
 function sellProbability(pricePct: number): number {
   const k = 12, x0 = 0.73
@@ -75,6 +70,17 @@ type SortKey = 'name' | 'location' | 'low' | 'avg' | 'peak' | 'pts' | 'yield' | 
 type SortDir = 'asc' | 'desc'
 
 export default function MarketIntelligence() {
+  const { data: resorts = [] } = useResorts()
+  const { data: contracts = [] } = useContracts()
+
+  const ALL_STATES = useMemo(() =>
+    [...new Set(resorts.map(r => extractState(r.location)))].sort(),
+  [resorts])
+
+  const OWNED_NAMES = useMemo(() =>
+    new Set(contracts.map(c => c.name)),
+  [contracts])
+
   const [selectedRegions, setSelectedRegions] = useState<Set<Region>>(new Set())
   const [selectedStates, setSelectedStates] = useState<Set<string>>(new Set())
   const [yieldSeason, setYieldSeason] = useState<'low' | 'avg' | 'peak'>('peak')
