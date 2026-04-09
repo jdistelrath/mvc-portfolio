@@ -1,0 +1,217 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: MVC Portfolio — API Gateway + Lambda handlers
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 15
+    MemorySize: 256
+    Environment:
+      Variables:
+        DB_CLUSTER_ARN: !ImportValue MvcDbClusterArn
+        DB_SECRET_ARN: !ImportValue MvcDbSecretArn
+        DB_NAME: !ImportValue MvcDbName
+        DEFAULT_ACCOUNT_ID: !Ref DefaultAccountId
+
+Parameters:
+  CognitoUserPoolArn:
+    Type: String
+    Default: arn:aws:cognito-idp:us-east-1:912892944159:userpool/us-east-1_dI6cZeAcX
+  DefaultAccountId:
+    Type: String
+    Description: UUID of the seed account (set after seeding)
+
+Resources:
+  Api:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      Cors:
+        AllowOrigin: "'*'"
+        AllowHeaders: "'Content-Type,Authorization'"
+        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+      Auth:
+        DefaultAuthorizer: CognitoAuth
+        Authorizers:
+          CognitoAuth:
+            UserPoolArn: !Ref CognitoUserPoolArn
+
+  # -- Account --
+  AccountFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/account.handler
+      CodeUri: ../backend/
+      Policies:
+        - Statement:
+          - Effect: Allow
+            Action: [rds-data:ExecuteStatement, rds-data:BatchExecuteStatement]
+            Resource: !ImportValue MvcDbClusterArn
+          - Effect: Allow
+            Action: secretsmanager:GetSecretValue
+            Resource: !ImportValue MvcDbSecretArn
+      Events:
+        Get:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /account
+            Method: GET
+
+  # -- Contracts --
+  ContractsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/contracts.handler
+      CodeUri: ../backend/
+      Policies:
+        - Statement:
+          - Effect: Allow
+            Action: [rds-data:ExecuteStatement, rds-data:BatchExecuteStatement]
+            Resource: !ImportValue MvcDbClusterArn
+          - Effect: Allow
+            Action: secretsmanager:GetSecretValue
+            Resource: !ImportValue MvcDbSecretArn
+      Events:
+        GetWeek:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /contracts
+            Method: GET
+        GetTrust:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /contracts/trust
+            Method: GET
+
+  # -- Trips --
+  TripsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/trips.handler
+      CodeUri: ../backend/
+      Policies:
+        - Statement:
+          - Effect: Allow
+            Action: [rds-data:ExecuteStatement, rds-data:BatchExecuteStatement]
+            Resource: !ImportValue MvcDbClusterArn
+          - Effect: Allow
+            Action: secretsmanager:GetSecretValue
+            Resource: !ImportValue MvcDbSecretArn
+      Events:
+        Get:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /trips
+            Method: GET
+        Post:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /trips
+            Method: POST
+
+  # -- Balances --
+  BalancesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/balances.handler
+      CodeUri: ../backend/
+      Policies:
+        - Statement:
+          - Effect: Allow
+            Action: [rds-data:ExecuteStatement, rds-data:BatchExecuteStatement]
+            Resource: !ImportValue MvcDbClusterArn
+          - Effect: Allow
+            Action: secretsmanager:GetSecretValue
+            Resource: !ImportValue MvcDbSecretArn
+      Events:
+        Get:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /balances
+            Method: GET
+        GetTotal:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /balances/total
+            Method: GET
+
+  # -- Allocations --
+  AllocationsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/allocations.handler
+      CodeUri: ../backend/
+      Policies:
+        - Statement:
+          - Effect: Allow
+            Action: [rds-data:ExecuteStatement, rds-data:BatchExecuteStatement]
+            Resource: !ImportValue MvcDbClusterArn
+          - Effect: Allow
+            Action: secretsmanager:GetSecretValue
+            Resource: !ImportValue MvcDbSecretArn
+      Events:
+        Get:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /allocations
+            Method: GET
+
+  # -- Fees --
+  FeesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/fees.handler
+      CodeUri: ../backend/
+      Policies:
+        - Statement:
+          - Effect: Allow
+            Action: [rds-data:ExecuteStatement, rds-data:BatchExecuteStatement]
+            Resource: !ImportValue MvcDbClusterArn
+          - Effect: Allow
+            Action: secretsmanager:GetSecretValue
+            Resource: !ImportValue MvcDbSecretArn
+      Events:
+        Get:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /fees/total
+            Method: GET
+
+  # -- Resorts (no auth required for read) --
+  ResortsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/resorts.handler
+      CodeUri: ../backend/
+      Policies:
+        - Statement:
+          - Effect: Allow
+            Action: [rds-data:ExecuteStatement, rds-data:BatchExecuteStatement]
+            Resource: !ImportValue MvcDbClusterArn
+          - Effect: Allow
+            Action: secretsmanager:GetSecretValue
+            Resource: !ImportValue MvcDbSecretArn
+      Events:
+        Get:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /resorts
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuth
+
+Outputs:
+  ApiUrl:
+    Value: !Sub 'https://${Api}.execute-api.${AWS::Region}.amazonaws.com/prod'
+    Description: API Gateway URL — set as VITE_API_URL in frontend

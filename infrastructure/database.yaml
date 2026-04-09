@@ -1,0 +1,82 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: MVC Portfolio — Aurora Serverless v2 PostgreSQL with Data API
+
+Parameters:
+  DBClusterName:
+    Type: String
+    Default: mvc-portfolio-db
+  MasterUsername:
+    Type: String
+    Default: mvcadmin
+  DatabaseName:
+    Type: String
+    Default: mvcportfolio
+  VpcId:
+    Type: String
+    Default: vpc-0cbb29a215e5a2d49
+  SubnetIds:
+    Type: CommaDelimitedList
+    Default: subnet-0b50e006b9f17438a,subnet-0dbf37a1adb859ab0,subnet-0e29e6c7a2ab5d918
+
+Resources:
+  DBSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '${DBClusterName}-credentials'
+      GenerateSecretString:
+        SecretStringTemplate: !Sub '{"username":"${MasterUsername}"}'
+        GenerateStringKey: password
+        PasswordLength: 32
+        ExcludePunctuation: true
+
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnets for Aurora Serverless v2
+      SubnetIds: !Ref SubnetIds
+
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Aurora Serverless v2 - Data API access
+      VpcId: !Ref VpcId
+
+  DBCluster:
+    Type: AWS::RDS::DBCluster
+    Properties:
+      DBClusterIdentifier: !Ref DBClusterName
+      Engine: aurora-postgresql
+      EngineVersion: '16.4'
+      DatabaseName: !Ref DatabaseName
+      MasterUsername: !Sub '{{resolve:secretsmanager:${DBSecret}:SecretString:username}}'
+      MasterUserPassword: !Sub '{{resolve:secretsmanager:${DBSecret}:SecretString:password}}'
+      EnableHttpEndpoint: true
+      ServerlessV2ScalingConfiguration:
+        MinCapacity: 0.5
+        MaxCapacity: 4
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VpcSecurityGroupIds:
+        - !Ref DBSecurityGroup
+
+  DBInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBClusterIdentifier: !Ref DBCluster
+      DBInstanceClass: db.serverless
+      Engine: aurora-postgresql
+
+Outputs:
+  ClusterArn:
+    Value: !GetAtt DBCluster.DBClusterArn
+    Export:
+      Name: MvcDbClusterArn
+  SecretArn:
+    Value: !Ref DBSecret
+    Export:
+      Name: MvcDbSecretArn
+  DatabaseName:
+    Value: !Ref DatabaseName
+    Export:
+      Name: MvcDbName
+  ClusterEndpoint:
+    Value: !GetAtt DBCluster.Endpoint.Address

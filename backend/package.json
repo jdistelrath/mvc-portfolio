@@ -1,0 +1,12 @@
+{
+  "name": "mvc-portfolio-backend",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "seed": "node src/seed.mjs"
+  },
+  "dependencies": {
+    "@aws-sdk/client-rds-data": "^3.0.0",
+    "@aws-sdk/client-secrets-manager": "^3.0.0"
+  }
+}
