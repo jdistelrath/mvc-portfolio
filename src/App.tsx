@@ -1,5 +1,7 @@
 import { Routes, Route, NavLink } from 'react-router-dom'
 import { useAccount } from './hooks/usePortfolioData'
+import { useAuth } from './auth/AuthProvider'
+import LoginPage from './auth/LoginPage'
 import Dashboard from './components/dashboard/Dashboard'
 import RentalCalculator from './components/calculator/RentalCalculator'
 import MarketIntelligence from './components/market/MarketIntelligence'
@@ -7,7 +9,20 @@ import Optimizer from './components/optimizer/Optimizer'
 import Schedule from './components/schedule/Schedule'
 
 export default function App() {
+  const { user, isAuthenticated, isAdmin, isLoading, logout } = useAuth()
   const { data: account } = useAccount()
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-gray-400 text-sm">Loading...</div>
+      </div>
+    )
+  }
+
+  if (!isAuthenticated) {
+    return <LoginPage />
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -40,14 +55,22 @@ export default function App() {
               </NavLink>
             ))}
           </div>
-          <div className="ml-auto flex items-center gap-2 pl-4">
-            {account?.members.map(m => (
-              <div key={m.id} title={m.name}
-                className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold cursor-pointer"
-                style={{ background: m.color, color: '#1a1a18' }}>
-                <span>{m.initials}</span>
+          <div className="ml-auto flex items-center gap-3 pl-4">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-full bg-gray-900 flex items-center justify-center text-xs font-semibold text-white">
+                {user!.name[0]}
               </div>
-            ))}
+              <div className="text-sm">
+                <span className="font-medium text-gray-900">{user!.name}</span>
+                {isAdmin && (
+                  <span className="ml-1.5 text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-medium">Admin</span>
+                )}
+              </div>
+            </div>
+            <button onClick={logout}
+              className="text-xs text-gray-400 hover:text-gray-600 transition-colors">
+              Sign out
+            </button>
           </div>
         </div>
       </nav>
