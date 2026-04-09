@@ -4,8 +4,8 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   // GitHub Pages needs /mvc-portfolio/, CloudFront needs /
-  // Set VITE_BASE_PATH=/ in GitHub Actions for AWS deploys
-  base: process.env.VITE_BASE_PATH || '/mvc-portfolio/',
+  // BUILD_TARGET=aws in GitHub Actions for AWS deploys
+  base: process.env.BUILD_TARGET === 'aws' ? '/' : '/mvc-portfolio/',
   plugins: [
     react(),
     tailwindcss(),

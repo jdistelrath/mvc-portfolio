@@ -23,7 +23,7 @@ jobs:
       - run: npm ci
       - run: npm run build
         env:
-          VITE_BASE_PATH: /
+          BUILD_TARGET: aws
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
