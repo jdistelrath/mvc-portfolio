@@ -24,6 +24,7 @@ jobs:
       - run: npm run build
         env:
           BUILD_TARGET: aws
+          VITE_API_URL: ${{ vars.API_URL }}
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
