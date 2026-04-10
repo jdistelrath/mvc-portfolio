@@ -3,8 +3,7 @@
 -- Multi-tenant SaaS from day one
 -- ============================================================================
 
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+-- gen_random_uuid() is built into Postgres 16, no extension needed
 
 -- ============================================================================
 -- ENUMS
@@ -62,7 +61,7 @@ CREATE TYPE chat_role AS ENUM ('user', 'assistant', 'system', 'tool');
 -- ============================================================================
 
 CREATE TABLE accounts (
-  id                 uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   slug               text UNIQUE NOT NULL,
   name               text NOT NULL,
   membership_level   membership_level NOT NULL DEFAULT 'Explorer',
@@ -72,7 +71,7 @@ CREATE TABLE accounts (
 );
 
 CREATE TABLE members (
-  id          uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   account_id  uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   name        text NOT NULL,
   email       text,
@@ -108,7 +107,7 @@ CREATE INDEX idx_resorts_region ON resorts(region);
 
 -- Point costs per season tier (optionally per unit type)
 CREATE TABLE resort_point_costs (
-  id          uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   resort_id   text NOT NULL REFERENCES resorts(id) ON DELETE CASCADE,
   season      season_tier NOT NULL,
   points_cost integer NOT NULL CHECK (points_cost > 0),
@@ -120,7 +119,7 @@ CREATE INDEX idx_rpc_resort ON resort_point_costs(resort_id);
 
 -- Market rental rates (versioned by effective_date so history is preserved)
 CREATE TABLE resort_market_rates (
-  id             uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   resort_id      text NOT NULL REFERENCES resorts(id) ON DELETE CASCADE,
   rate_low       numeric(10,2) NOT NULL,
   rate_avg       numeric(10,2) NOT NULL,
@@ -134,7 +133,7 @@ CREATE INDEX idx_rmr_resort ON resort_market_rates(resort_id);
 
 -- Monthly demand scores (1-10, Jan=1 through Dec=12)
 CREATE TABLE resort_demand (
-  id           uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   resort_id    text NOT NULL REFERENCES resorts(id) ON DELETE CASCADE,
   month        smallint NOT NULL CHECK (month >= 1 AND month <= 12),
   demand_score smallint NOT NULL CHECK (demand_score >= 1 AND demand_score <= 10),
@@ -148,7 +147,7 @@ CREATE INDEX idx_rd_resort ON resort_demand(resort_id);
 -- ============================================================================
 
 CREATE TABLE contracts (
-  id                     uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id                     uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   account_id             uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   external_id            text NOT NULL,          -- Marriott ID, e.g. 'MU*9203*24*B'
   contract_type          contract_type NOT NULL,
@@ -184,7 +183,7 @@ CREATE INDEX idx_contracts_type ON contracts(account_id, contract_type);
 
 -- Per-year status for week contracts
 CREATE TABLE contract_year_statuses (
-  id          uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   contract_id uuid NOT NULL REFERENCES contracts(id) ON DELETE CASCADE,
   account_id  uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   use_year    smallint NOT NULL CHECK (use_year >= 2018 AND use_year <= 2050),
@@ -199,7 +198,7 @@ CREATE INDEX idx_cys_account_year ON contract_year_statuses(account_id, use_year
 -- ============================================================================
 
 CREATE TABLE points_ledger (
-  id             uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   account_id     uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   contract_id    uuid NOT NULL REFERENCES contracts(id) ON DELETE CASCADE,
   use_year       smallint NOT NULL CHECK (use_year >= 2018 AND use_year <= 2050),
@@ -243,7 +242,7 @@ CREATE INDEX idx_pb_account_year ON point_balances(account_id, use_year);
 -- ============================================================================
 
 CREATE TABLE yearly_allocations (
-  id                uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   account_id        uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   use_year          smallint NOT NULL,
   elected_pts       integer NOT NULL DEFAULT 0,
@@ -262,7 +261,7 @@ CREATE INDEX idx_ya_account ON yearly_allocations(account_id, use_year);
 -- ============================================================================
 
 CREATE TABLE trips (
-  id                    uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   account_id            uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   name                  text NOT NULL,
   guest_member_id       uuid REFERENCES members(id),
@@ -292,7 +291,7 @@ CREATE INDEX idx_trips_dates ON trips(account_id, check_in, check_out)
 -- ============================================================================
 
 CREATE TABLE historical_trips (
-  id          uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   account_id  uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   start_date  date NOT NULL,
   end_date    date NOT NULL,
@@ -314,7 +313,7 @@ CREATE INDEX idx_ht_dates ON historical_trips(account_id, start_date);
 
 -- One row per member per day — multiple members on the same day = multiple rows
 CREATE TABLE schedule_blocks (
-  id          uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   account_id  uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   block_date  date NOT NULL,
   member_id   uuid NOT NULL REFERENCES members(id),
@@ -332,7 +331,7 @@ CREATE INDEX idx_sb_member ON schedule_blocks(member_id, block_date);
 -- ============================================================================
 
 CREATE TABLE rental_listings (
-  id                uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   account_id        uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   contract_id       uuid NOT NULL REFERENCES contracts(id),
   resort_id         text REFERENCES resorts(id),
@@ -356,7 +355,7 @@ CREATE INDEX idx_rl_resort ON rental_listings(resort_id) WHERE resort_id IS NOT 
 CREATE INDEX idx_rl_year ON rental_listings(account_id, use_year);
 
 CREATE TABLE rental_bookings (
-  id                    uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   listing_id            uuid NOT NULL REFERENCES rental_listings(id),
   account_id            uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   renter_name           text NOT NULL,
@@ -375,7 +374,7 @@ CREATE INDEX idx_rb_listing ON rental_bookings(listing_id);
 CREATE INDEX idx_rb_account ON rental_bookings(account_id);
 
 CREATE TABLE rental_payments (
-  id              uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   booking_id      uuid NOT NULL REFERENCES rental_bookings(id),
   account_id      uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   amount          numeric(10,2) NOT NULL,
@@ -397,7 +396,7 @@ CREATE INDEX idx_rp_status ON rental_payments(account_id, status);
 -- ============================================================================
 
 CREATE TABLE contract_rental_settings (
-  id                  uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   account_id          uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   contract_id         uuid NOT NULL REFERENCES contracts(id) ON DELETE CASCADE,
   available_to_rent   boolean NOT NULL DEFAULT false,
@@ -413,7 +412,7 @@ CREATE INDEX idx_crs_account ON contract_rental_settings(account_id);
 -- ============================================================================
 
 CREATE TABLE optimizer_settings (
-  id                uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   account_id        uuid UNIQUE NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   coverage_pct      smallint NOT NULL DEFAULT 100 CHECK (coverage_pct BETWEEN 0 AND 200),
   listing_price_pct smallint NOT NULL DEFAULT 68 CHECK (listing_price_pct BETWEEN 0 AND 100),
@@ -426,7 +425,7 @@ CREATE TABLE optimizer_settings (
 -- ============================================================================
 
 CREATE TABLE arbitrage_targets (
-  id            uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   account_id    uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   resort_id     text NOT NULL REFERENCES resorts(id),
   points_needed integer NOT NULL,
@@ -448,7 +447,7 @@ CREATE INDEX idx_at_yield ON arbitrage_targets(ev_per_point DESC) WHERE is_activ
 -- ============================================================================
 
 CREATE TABLE chat_sessions (
-  id          uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   account_id  uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   member_id   uuid NOT NULL REFERENCES members(id),
   title       text,
@@ -462,7 +461,7 @@ CREATE INDEX idx_cs_account ON chat_sessions(account_id);
 CREATE INDEX idx_cs_member ON chat_sessions(member_id, created_at DESC);
 
 CREATE TABLE chat_messages (
-  id          uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   session_id  uuid NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
   account_id  uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   role        chat_role NOT NULL,

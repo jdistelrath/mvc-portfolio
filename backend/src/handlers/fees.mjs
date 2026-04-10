@@ -7,7 +7,7 @@ export async function handler() {
     const accountId = getAccountId()
     const rows = await query(
       `SELECT COALESCE(SUM(annual_fee), 0) as total
-       FROM contracts WHERE account_id = :acct AND fee_confirmed = true`,
+       FROM contracts WHERE account_id = :acct::uuid AND fee_confirmed = true`,
       [param('acct', accountId)]
     )
     return ok(rows[0]?.total || 0)

@@ -7,7 +7,7 @@ export async function handler(event) {
     const accountId = getAccountId()
 
     const accounts = await query(
-      'SELECT id, slug, name, membership_level FROM accounts WHERE id = :id',
+      'SELECT id, slug, name, membership_level FROM accounts WHERE id = :id::uuid',
       [param('id', accountId)]
     )
     if (!accounts.length) return ok({ id: '', name: '', membershipLevel: '', members: [] })
@@ -15,7 +15,7 @@ export async function handler(event) {
     const acct = accounts[0]
 
     const members = await query(
-      'SELECT id, name, initials, color, role FROM members WHERE account_id = :id ORDER BY role DESC, name',
+      'SELECT id, name, initials, color, role FROM members WHERE account_id = :id::uuid ORDER BY role DESC, name',
       [param('id', accountId)]
     )
 

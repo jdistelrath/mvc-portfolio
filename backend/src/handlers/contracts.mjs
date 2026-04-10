@@ -13,7 +13,7 @@ export async function handler(event) {
         `SELECT external_id as id, name, points as pts, annual_fee as fee,
                 fee_confirmed as "feeConfirmed", expiry_date, flag,
                 market_note as "mktNote", default_rate_per_point as "defaultRate"
-         FROM contracts WHERE account_id = :acct AND contract_type = 'trust'
+         FROM contracts WHERE account_id = :acct::uuid AND contract_type = 'trust'
          ORDER BY name`,
         [param('acct', accountId)]
       )
@@ -36,7 +36,7 @@ export async function handler(event) {
               cys.status as status2027
        FROM contracts c
        LEFT JOIN contract_year_statuses cys ON cys.contract_id = c.id AND cys.use_year = 2027
-       WHERE c.account_id = :acct AND c.contract_type = 'week'
+       WHERE c.account_id = :acct::uuid AND c.contract_type = 'week'
        ORDER BY c.name`,
       [param('acct', accountId)]
     )

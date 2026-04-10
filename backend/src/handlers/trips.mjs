@@ -11,7 +11,7 @@ export async function handler(event) {
       const rows = await query(
         `SELECT id, name, guest_name as guest, month, use_year as year,
                 points_cost as pts, status, resort_name as resort
-         FROM trips WHERE account_id = :acct
+         FROM trips WHERE account_id = :acct::uuid
          ORDER BY use_year, month`,
         [param('acct', accountId)]
       )
@@ -29,7 +29,7 @@ export async function handler(event) {
 
       await execute(
         `INSERT INTO trips (account_id, name, guest_name, month, use_year, points_cost, status, resort_name)
-         VALUES (:acct, :name, :guest, :month, :year, :pts, :status, :resort)`,
+         VALUES (:acct::uuid, :name, :guest, :month, :year, :pts, :status::trip_status, :resort)`,
         [
           param('acct', accountId), param('name', body.name),
           param('guest', body.guest || ''), param('month', body.month || ''),

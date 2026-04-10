@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc:*)",
+      "Bash(npx vite:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)",
+      "Bash(npm run:*)",
+      "Bash(python3 -c ':*)",
+      "Bash(npm install:*)",
+      "Bash(node -e ':*)",
+      "Read(//tmp/**)",
+      "Bash(node -e \"const d = require\\('/tmp/mvc_resorts.json'\\); console.log\\(d.length + ' resorts extracted'\\)\")",
+      "Bash(node -e \"const fs = require\\('fs'\\); const d = JSON.parse\\(fs.readFileSync\\('C:/tmp/mvc_resorts.json','utf8'\\)\\); console.log\\(d.length + ' resorts'\\); d.forEach\\(r => console.log\\(r.code + ' | ' + r.name + ' | ' + r.loc + ' | low=' + r.lowWeekly + ' mid=' + r.midWeekly + ' peak=' + r.peakWeekly + ' hol=' + r.holidayWeekly + ' \\(n=' + r.nCount + '\\)'\\)\\);\")",
+      "Bash(node gen_resorts.cjs)",
+      "Bash(node -e \"const d = require\\('fs'\\).readFileSync\\('src/data/resortDatabase.ts','utf8'\\); const m = d.match\\(/id: '/g\\); console.log\\(m.length + ' resorts in database'\\)\")",
+      "Bash(npm uninstall:*)",
+      "Bash(git commit:*)",
+      "Bash(aws cloudformation:*)",
+      "Bash(aws iam:*)",
+      "Bash(gh secret:*)",
+      "Read(//c/Program Files/GitHub CLI/**)",
+      "Read(//c/Program Files \\(x86\\)/GitHub CLI/**)",
+      "Bash(cmd.exe /c \"where gh\")"
+    ]
+  }
+}

@@ -13,30 +13,13 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 // For simplicity, we hardcode the seed data here matching portfolio.ts
 
 async function run() {
-  console.log('Running schema...')
-  const schema = readFileSync(resolve(__dirname, '../../infrastructure/schema.sql'), 'utf8')
-  // Split on semicolons but skip empty statements and the DO $$ blocks
-  const statements = schema
-    .split(/;(?=\s*(?:CREATE|ALTER|GRANT|DO|\s*$))/gm)
-    .map(s => s.trim())
-    .filter(s => s.length > 0 && !s.startsWith('--'))
-
-  for (const stmt of statements) {
-    try {
-      await execute(stmt)
-    } catch (err) {
-      // Skip errors from enums/types already existing, etc.
-      if (!err.message?.includes('already exists') && !err.message?.includes('does not exist')) {
-        console.warn('Statement warning:', err.message?.substring(0, 120))
-      }
-    }
-  }
-  console.log('Schema applied.')
+  // Schema should already be applied via run-schema.mjs
 
   // ── Account ──
   console.log('Seeding account...')
-  await execute(`INSERT INTO accounts (id, slug, name, membership_level) VALUES (:id, 'distelrath', 'Distelrath', 'Chairman''s Club') ON CONFLICT (slug) DO NOTHING`,
-    [param('id', process.env.ACCOUNT_ID || '00000000-0000-0000-0000-000000000001')])
+  const ACCT_UUID = process.env.ACCOUNT_ID || '00000000-0000-0000-0000-000000000001'
+  await execute(`INSERT INTO accounts (id, slug, name, membership_level) VALUES (:id::uuid, 'distelrath', 'Distelrath', 'Chairman''s Club') ON CONFLICT (slug) DO NOTHING`,
+    [param('id', ACCT_UUID)])
 
   const ACCT = process.env.ACCOUNT_ID || '00000000-0000-0000-0000-000000000001'
 
@@ -48,7 +31,7 @@ async function run() {
   ]
   for (const m of members) {
     await execute(
-      `INSERT INTO members (id, account_id, name, initials, color, role) VALUES (:id, :acct, :name, :initials, :color, :role::member_role) ON CONFLICT (id) DO NOTHING`,
+      `INSERT INTO members (id, account_id, name, initials, color, role) VALUES (:id::uuid, :acct::uuid, :name, :initials, :color, :role::member_role) ON CONFLICT (id) DO NOTHING`,
       [param('id', m.id), param('acct', ACCT), param('name', m.name), param('initials', m.initials), param('color', m.color), param('role', m.role)]
     )
   }
@@ -67,7 +50,7 @@ async function run() {
   for (const c of weekContracts) {
     const result = await query(
       `INSERT INTO contracts (account_id, external_id, contract_type, name, points, annual_fee, fee_confirmed, location, floor_plan, season, seasonal_demand, market_low, market_high, market_note, default_rate_per_point)
-       VALUES (:acct, :ext, 'week', :name, :pts, :fee, true, :loc, :floor, :season, :seasonal::smallint[], :mktLow, :mktHigh, :mktNote, :rate)
+       VALUES (:acct::uuid, :ext, 'week', :name, :pts, :fee, true, :loc, :floor, :season, :seasonal::smallint[], :mktLow, :mktHigh, :mktNote, :rate)
        ON CONFLICT (account_id, external_id) DO NOTHING RETURNING id`,
       [param('acct', ACCT), param('ext', c.ext), param('name', c.name), param('pts', c.pts), param('fee', c.fee), param('loc', c.loc), param('floor', c.floor), param('season', c.season), param('seasonal', '{' + c.seasonal.join(',') + '}'), param('mktLow', c.mktLow), param('mktHigh', c.mktHigh), param('mktNote', c.mktNote), param('rate', c.rate)]
     )
@@ -75,7 +58,7 @@ async function run() {
     // Set 2027 status
     if (result.length > 0) {
       await execute(
-        `INSERT INTO contract_year_statuses (contract_id, account_id, use_year, status) VALUES (:cid, :acct, 2027, :status::contract_year_status) ON CONFLICT DO NOTHING`,
+        `INSERT INTO contract_year_statuses (contract_id, account_id, use_year, status) VALUES (:cid::uuid, :acct::uuid, 2027, :status::contract_year_status) ON CONFLICT DO NOTHING`,
         [param('cid', result[0].id), param('acct', ACCT), param('status', c.status2027)]
       )
     }
@@ -93,7 +76,7 @@ async function run() {
   for (const t of trustContracts) {
     await execute(
       `INSERT INTO contracts (account_id, external_id, contract_type, name, points, annual_fee, fee_confirmed, expiry_date, flag, market_note, default_rate_per_point)
-       VALUES (:acct, :ext, 'trust', :name, :pts, :fee, :confirmed, :expiry::date, :flag::contract_flag, :mktNote, :rate)
+       VALUES (:acct::uuid, :ext, 'trust', :name, :pts, :fee, :confirmed, :expiry::date, :flag::contract_flag, :mktNote, :rate)
        ON CONFLICT (account_id, external_id) DO NOTHING`,
       [param('acct', ACCT), param('ext', t.ext), param('name', t.name), param('pts', t.pts), param('fee', t.fee), param('confirmed', t.fee !== null), param('expiry', t.expiry), param('flag', t.flag), param('mktNote', t.mktNote), param('rate', t.rate)]
     )
@@ -110,7 +93,7 @@ async function run() {
   for (const a of allocs) {
     await execute(
       `INSERT INTO yearly_allocations (account_id, use_year, elected_pts, primary_trust_pts, legacy_trust_pts, total_pts, recurring_total, note)
-       VALUES (:acct, :year, :elected, :primary, :legacy, :total, :recurring, :note)
+       VALUES (:acct::uuid, :year, :elected, :primary, :legacy, :total, :recurring, :note)
        ON CONFLICT (account_id, use_year) DO NOTHING`,
       [param('acct', ACCT), param('year', a.year), param('elected', a.elected), param('primary', a.primary), param('legacy', a.legacy), param('total', a.total), param('recurring', a.recurring), param('note', a.note)]
     )
@@ -132,7 +115,7 @@ async function run() {
   for (const t of trips) {
     await execute(
       `INSERT INTO trips (account_id, name, guest_name, month, use_year, points_cost, status, resort_name)
-       VALUES (:acct, :name, :guest, :month, :year, :pts, :status::trip_status, :resort)`,
+       VALUES (:acct::uuid, :name, :guest, :month, :year, :pts, :status::trip_status, :resort)`,
       [param('acct', ACCT), param('name', t.name), param('guest', t.guest), param('month', t.month), param('year', t.year), param('pts', t.pts), param('status', t.status), param('resort', t.resort)]
     )
   }
@@ -141,7 +124,7 @@ async function run() {
   console.log('Seeding point balances...')
   // First get contract UUIDs
   const contractRows = await query(
-    `SELECT id, external_id FROM contracts WHERE account_id = :acct`,
+    `SELECT id, external_id FROM contracts WHERE account_id = :acct::uuid`,
     [param('acct', ACCT)]
   )
   const contractMap = {}
@@ -158,7 +141,7 @@ async function run() {
     if (!cid) { console.warn('Contract not found:', b.contractExt); continue }
     await execute(
       `INSERT INTO points_ledger (account_id, contract_id, use_year, movement_type, amount, description)
-       VALUES (:acct, :cid, 2026, :type::point_movement, :pts, :desc)`,
+       VALUES (:acct::uuid, :cid::uuid, 2026, :type::point_movement, :pts, :desc)`,
       [param('acct', ACCT), param('cid', cid), param('type', b.type), param('pts', b.pts), param('desc', b.type + ' - ' + b.contractExt)]
     )
   }

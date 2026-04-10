@@ -8,7 +8,7 @@ export async function handler() {
     const rows = await query(
       `SELECT use_year, elected_pts, primary_trust_pts, legacy_trust_pts,
               total_pts, recurring_total, note
-       FROM yearly_allocations WHERE account_id = :acct
+       FROM yearly_allocations WHERE account_id = :acct::uuid
        ORDER BY use_year`,
       [param('acct', accountId)]
     )
