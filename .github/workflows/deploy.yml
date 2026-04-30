@@ -20,6 +20,13 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Reject deprecated Node runtimes in infrastructure
+        run: |
+          if grep -REn --include='*.yaml' 'nodejs16\.x|nodejs18\.x|nodejs20\.x' infrastructure/; then
+            echo 'Deprecated Node runtime reference found in infrastructure/'
+            exit 1
+          fi
+
       - run: npm ci
       - run: npm run build
         env:
